@@ -1,0 +1,8 @@
+bin
+.idea
+obj
+node_modules
+build
+.env
+wwwroot
+.DS_Store
