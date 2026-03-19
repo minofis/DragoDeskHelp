@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="DragoDeskHelp.API/DragoDeskHelp.API.csproj" />
+  <Project Path="DragoDeskHelp.BLL/DragoDeskHelp.BLL.csproj" />
+  <Project Path="DragoDeskHelp.Core/DragoDeskHelp.Core.csproj" />
+  <Project Path="DragoDeskHelp.DAL/DragoDeskHelp.DAL.csproj" />
+</Solution>
