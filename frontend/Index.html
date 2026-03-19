@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>title</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Верхняя панель -->
+    <div class="top-bar">
+        <div class="top-box">
+            <span id="current-time">Current Time/Data</span>
+        </div>
+        <div class="top-box title-box">
+            <div>HelpDesk кафедри</div>
+        </div>
+    </div>
+
+    <!-- Таблица заявок -->
+    <div class="table-wrapper">
+        <iframe id="requests-frame" src="requests.html" title="iframe"></iframe>
+    </div>
+
+    <!-- Кнопка подачи заявки -->
+    <div class="bottom-button" onclick="openModal()">
+        Подать Заявку
+    </div>
+
+    <!-- Popup -->
+    <div id="requestModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h2>Новая заявка</h2>
+            <form id="requestForm">
+                <label for="room">Номер аудитории:</label>
+                <input type="text" id="room" name="room" required>
+
+                <label for="applicant">Заявник:</label>
+                <input type="text" id="applicant" name="applicant" required>
+
+                <label for="description">ОПИСАНИЕ:</label>
+                <textarea id="description" name="description" required></textarea>
+
+                <div class="form-buttons">
+                    <button type="button" onclick="closeModal()">Отмена</button>
+                    <button type="submit">Отправить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Подключение скриптов -->
+    <script src="CurrentTimeData.js"></script>
+    <script src="popup.js"></script>
+</body>
+</html>
