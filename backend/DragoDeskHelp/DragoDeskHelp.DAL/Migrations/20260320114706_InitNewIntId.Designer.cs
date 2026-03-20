@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace DragoDeskHelp.DAL.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260319191814_InitPostgres")]
-    partial class InitPostgres
+    [Migration("20260320114706_InitNewIntId")]
+    partial class InitNewIntId
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -27,9 +27,11 @@ namespace DragoDeskHelp.DAL.Migrations
 
             modelBuilder.Entity("DragoDeskHelp.Core.Entities.Ticket", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("AuthorName")
                         .IsRequired()

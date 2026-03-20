@@ -21,19 +21,34 @@ namespace DragoDeskHelp.API.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<TicketResponseDto>>> GetTickets()
         {
-            var tickets = await _context.Tickets
-                .Select(t => new TicketResponseDto
-                {
-                    RoomNumber = t.RoomNumber,
-                    AuthorName = t.AuthorName,
-                    Description = t.Description,
-                    Status = t.Status.ToString(),
-                    CreatedAt = t.CreatedAt.ToString()
-                })
+            var rawTickets = await _context.Tickets
                 .OrderByDescending(t => t.CreatedAt)
                 .ToListAsync();
 
-            return Ok(tickets);
+            var kyivTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Kyiv");
+
+            var response = rawTickets.Select(t => {
+                var localTime = TimeZoneInfo.ConvertTimeFromUtc(t.CreatedAt, kyivTimeZone);
+
+                return new TicketResponseDto
+                    {
+                        Id = t.Id,
+                        RoomNumber = t.RoomNumber,
+                        AuthorName = t.AuthorName,
+                        Description = t.Description,
+                        StatusText = t.Status switch 
+                        {
+                            TicketStatus.New => "Нова",
+                            TicketStatus.InProgress => "В роботі",
+                            TicketStatus.Resolved => "Виконано",
+                            TicketStatus.Closed => "Закрито",
+                            _ => "Невідомо"
+                        },
+                        CreatedAt = localTime.ToString("dd.MM.yyyy HH:mm") 
+                    };
+                });
+
+            return Ok(response);
         }
 
         [HttpPost]
@@ -41,7 +56,6 @@ namespace DragoDeskHelp.API.Controllers
         {
             var ticket = new Ticket
             {
-                Id = Guid.NewGuid(),
                 RoomNumber = ticketDto.RoomNumber,
                 AuthorName = ticketDto.AuthorName,
                 Description = ticketDto.Description,

@@ -5,7 +5,7 @@ namespace DragoDeskHelp.Core.Entities
 {
     public class Ticket
     {
-        public Guid Id { get; set; }
+        public int Id { get; set; }
 
         [Required]
         public string RoomNumber { get; set; } = string.Empty;

@@ -1,5 +1,6 @@
 const API_BASE = '/api/tickets';
 
+// Защита от XSS-атак
 function escapeHtml(str) {
   if (!str && str !== 0) return '';
   return String(str)
@@ -10,44 +11,41 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-function statusText(status) {
-  switch (Number(status)) {
-    case 0: return 'Новая';
-    case 1: return 'В работе';
-    case 2: return 'Выполнено';
-    case 3: return 'Закрыто';
-    default: return 'Неизвестно';
-  }
+// Генерация CSS-класса на основе статуса
+function statusClassFromText(statusText) {
+  if (!statusText && statusText !== 0) return 'status-невідомо';
+
+  const slug = String(statusText)
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-а-яёА-ЯЁіІїЇєЄґҐ\-]/g, '')
+    .replace(/-+/g, '-');
+  return `status-${slug}`;
 }
 
-function statusClass(status) {
-  switch (Number(status)) {
-    case 0: return 'status-новая';
-    case 1: return 'status-в-работе';
-    case 2: return 'status-выполнено';
-    case 3: return 'status-закрыто';
-    default: return 'status-неизвестно';
-  }
-}
-
+// Получение и отрисовка заявок
 async function fetchTickets() {
   try {
     const res = await fetch(API_BASE);
     if (!res.ok) throw new Error('Network response was not ok');
+    
     const data = await res.json();
     const tbody = document.getElementById('ticketsBody');
-    if (!tbody) return; // nothing to render into
+    if (!tbody) return; 
+    
     tbody.innerHTML = '';
+    
     data.forEach(ticket => {
       const tr = document.createElement('tr');
       const publishedTime = ticket.publishedAt || ticket.createdAt || '';
+      
       tr.innerHTML = `
-        <td>${escapeHtml(ticket.id)}</td>
+        <td>${escapeHtml(ticket.displayId ?? ticket.id ?? ticket.Id ?? '')}</td>
         <td>${escapeHtml(ticket.roomNumber)}</td>
         <td>${escapeHtml(ticket.authorName)}</td>
         <td>${escapeHtml(ticket.description)}</td>
         <td>${escapeHtml(publishedTime)}</td>
-        <td><span class="status ${statusClass(ticket.status)}">${statusText(ticket.status)}</span></td>
+        <td><span class="status ${statusClassFromText(ticket.statusText ?? ticket.StatusText ?? '')}">${escapeHtml(ticket.statusText ?? ticket.StatusText ?? '')}</span></td>
       `;
       tbody.appendChild(tr);
     });
@@ -56,25 +54,34 @@ async function fetchTickets() {
   }
 }
 
-// When this script runs inside the iframe (requests.html)
 if (window.self !== window.top) {
+
   window.refreshTickets = fetchTickets;
   document.addEventListener('DOMContentLoaded', fetchTickets);
 } else {
-  // Parent window (Index.html) — attach form submit handler
+  // В главном окне вешаем обработчик на форму
   document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('requestForm');
     if (!form) return;
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      
       const room = document.getElementById('room')?.value.trim();
       const applicant = document.getElementById('applicant')?.value.trim();
       const description = document.getElementById('description')?.value.trim();
 
+      // 1. Проверка на пустые поля
       if (!room || !applicant || !description) {
-        alert('Пожалуйста, заполните все поля формы.');
+        alert('Будь ласка, заповніть усі поля форми.');
         return;
+      }
+
+      // 2. Валидация номера аудитории
+      const roomRegex = /^[0-9]{1,4}[а-яА-Яa-zA-ZіІїЇєЄґҐ]?$/;
+      if (!roomRegex.test(room)) {
+        alert('Некоректний номер аудиторії! Введіть число (наприклад: 305 або 101а).');
+        return; 
       }
 
       const payload = {
@@ -83,34 +90,37 @@ if (window.self !== window.top) {
         description: description
       };
 
+      // 3. Отправка на сервер
       try {
         const res = await fetch(API_BASE, {
-        method: 'POST',
-        headers: { 
+          method: 'POST',
+          headers: { 
             'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
-    });
+          },
+          body: JSON.stringify(payload)
+        });
+
         if (!res.ok) throw new Error('POST failed');
 
-        // clear form
+        // Выводим реальный успех ТОЛЬКО если сервер ответил 200 OK
+        alert('Заявка успішно відправлена!');
+
+        // Очищаем форму и закрываем модалку
         form.reset();
-        // close modal if function exists
         if (typeof closeModal === 'function') closeModal();
 
-        // refresh iframe list if possible
+        // Обновляем таблицу во фрейме
         const iframe = document.getElementById('requests-frame');
         if (iframe && iframe.contentWindow) {
           if (typeof iframe.contentWindow.refreshTickets === 'function') {
             iframe.contentWindow.refreshTickets();
           } else {
-            // fallback: reload iframe
             iframe.contentWindow.location.reload();
           }
         }
       } catch (err) {
         console.error('Failed to submit ticket', err);
-        alert('Ошибка при отправке заявки. Попробуйте ещё раз.');
+        alert('Помилка при відправці заявки. Перевірте дані та спробуйте ще раз.');
       }
     });
   });
