@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace DragoDeskHelp.API.DTOs
+namespace DragoDeskHelp.Core.DTOs
 {
     public class TicketRequestDto
     {

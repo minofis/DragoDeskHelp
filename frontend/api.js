@@ -35,6 +35,17 @@ async function fetchTickets() {
     
     tbody.innerHTML = '';
     
+    if (data.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" style="text-align: center; padding: 60px 20px; color: #666; font-size: 1.1em; font-style: italic; background: #fff; border: none !important;">
+            Заявок поки що немає
+          </td>
+        </tr>
+      `;
+      return; 
+    }
+    
     data.forEach(ticket => {
       const tr = document.createElement('tr');
       const publishedTime = ticket.publishedAt || ticket.createdAt || '';
@@ -51,6 +62,16 @@ async function fetchTickets() {
     });
   } catch (err) {
     console.error('Failed to fetch tickets', err);
+    const tbody = document.getElementById('ticketsBody');
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" style="text-align: center; padding: 30px; color: #dc3545; border: none !important;">
+            Помилка завантаження даних. Перевірте з'єднання з сервером.
+          </td>
+        </tr>
+      `;
+    }
   }
 }
 
@@ -59,7 +80,6 @@ if (window.self !== window.top) {
   window.refreshTickets = fetchTickets;
   document.addEventListener('DOMContentLoaded', fetchTickets);
 } else {
-  // В главном окне вешаем обработчик на форму
   document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('requestForm');
     if (!form) return;
@@ -102,7 +122,6 @@ if (window.self !== window.top) {
 
         if (!res.ok) throw new Error('POST failed');
 
-        // Выводим реальный успех ТОЛЬКО если сервер ответил 200 OK
         alert('Заявка успішно відправлена!');
 
         // Очищаем форму и закрываем модалку

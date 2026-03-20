@@ -1,3 +1,5 @@
+using DragoDeskHelp.BLL.Services;
+using DragoDeskHelp.Core.Interfaces;
 using DragoDeskHelp.DAL;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,7 +11,13 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("ApplicationDbContext")));
-    
+
+builder.Services.AddHttpClient<ITelegramBotService, TelegramBotService>(client => 
+{
+    client.BaseAddress = new Uri("http://bot:8000/"); 
+});
+
+builder.Services.AddScoped<ITicketService, TicketService>();
 
 builder.Services.AddControllers();
 

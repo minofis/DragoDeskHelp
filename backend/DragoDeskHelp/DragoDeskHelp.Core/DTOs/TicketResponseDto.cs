@@ -1,4 +1,4 @@
-namespace DragoDeskHelp.API.DTOs
+namespace DragoDeskHelp.Core.DTOs
 {
     public class TicketResponseDto
     {

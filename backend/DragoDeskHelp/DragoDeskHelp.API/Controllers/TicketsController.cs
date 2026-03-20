@@ -1,9 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using DragoDeskHelp.DAL;
-using DragoDeskHelp.Core.Enums;
-using DragoDeskHelp.Core.Entities;
-using DragoDeskHelp.API.DTOs;
+using DragoDeskHelp.Core.DTOs;
+using DragoDeskHelp.Core.Interfaces;
 
 namespace DragoDeskHelp.API.Controllers
 {
@@ -11,62 +8,40 @@ namespace DragoDeskHelp.API.Controllers
     [ApiController]
     public class TicketsController : ControllerBase
     {
-        private readonly AppDbContext _context;
+        private readonly ITicketService _ticketService;
 
-        public TicketsController(AppDbContext context)
+        public TicketsController(ITicketService ticketService)
         {
-            _context = context;
+            _ticketService = ticketService;
         }
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<TicketResponseDto>>> GetTickets()
         {
-            var rawTickets = await _context.Tickets
-                .OrderByDescending(t => t.CreatedAt)
-                .ToListAsync();
-
-            var kyivTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Kyiv");
-
-            var response = rawTickets.Select(t => {
-                var localTime = TimeZoneInfo.ConvertTimeFromUtc(t.CreatedAt, kyivTimeZone);
-
-                return new TicketResponseDto
-                    {
-                        Id = t.Id,
-                        RoomNumber = t.RoomNumber,
-                        AuthorName = t.AuthorName,
-                        Description = t.Description,
-                        StatusText = t.Status switch 
-                        {
-                            TicketStatus.New => "Нова",
-                            TicketStatus.InProgress => "В роботі",
-                            TicketStatus.Resolved => "Виконано",
-                            TicketStatus.Closed => "Закрито",
-                            _ => "Невідомо"
-                        },
-                        CreatedAt = localTime.ToString("dd.MM.yyyy HH:mm") 
-                    };
-                });
-
+            var response = await _ticketService.GetTicketsAsync();
             return Ok(response);
         }
 
         [HttpPost]
-        public async Task<ActionResult<Ticket>> CreateTicket(TicketRequestDto ticketDto)
+        public async Task<ActionResult> CreateTicket(TicketRequestDto ticketDto)
         {
-            var ticket = new Ticket
+            var newTicketId = await _ticketService.CreateTicketAsync(ticketDto);
+            
+            return Ok(new { Message = "Заявка створена", Id = newTicketId });
+        }
+
+        [HttpPatch("{id}/status")]
+        public async Task<IActionResult> UpdateTicketStatus(int id, 
+            [FromBody] TicketStatusUpdateDto dto)
+        {
+            var isUpdated = await _ticketService.UpdateTicketStatusAsync(id, dto.Status);
+
+            if (!isUpdated)
             {
-                RoomNumber = ticketDto.RoomNumber,
-                AuthorName = ticketDto.AuthorName,
-                Description = ticketDto.Description,
-                CreatedAt = DateTime.UtcNow,
-                Status = TicketStatus.New
-            };
+                return NotFound(new { Message = $"Заявка з ID {id} не знайдена." });
+            }
 
-            _context.Tickets.Add(ticket);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetTickets), new { id = ticket.Id }, ticket);
+            return Ok(new { Message = "Статус успішно оновлено!" });
         }
     }
 }
