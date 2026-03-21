@@ -85,5 +85,66 @@ namespace DragoDeskHelp.BLL.Services
 
             return true;
         }
+
+        public async Task<TicketResponseDto?> GetTicketByIdAsync(int id)
+        {
+            var ticket = await _context.Tickets.FindAsync(id);
+            if (ticket == null) return null;
+
+            var kyivTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Kyiv");
+            var localTime = TimeZoneInfo.ConvertTimeFromUtc(ticket.CreatedAt, kyivTimeZone);
+
+            return new TicketResponseDto
+            {
+                Id = ticket.Id,
+                RoomNumber = ticket.RoomNumber,
+                AuthorName = ticket.AuthorName,
+                Description = ticket.Description,
+                StatusText = ticket.Status switch 
+                {
+                    TicketStatus.New => "Нова",
+                    TicketStatus.InProgress => "В роботі",
+                    TicketStatus.Resolved => "Виконано",
+                    TicketStatus.Closed => "Закрито",
+                    _ => "Невідомо"
+                },
+                CreatedAt = localTime.ToString("dd.MM.yyyy HH:mm") 
+            };
+        }
+        public async Task<IEnumerable<TicketResponseDto>> GetTicketsAsync(TicketStatus? status = null)
+        {
+            var query = _context.Tickets.AsQueryable();
+
+            if (status.HasValue)
+            {
+                query = query.Where(t => t.Status == status.Value);
+            }
+
+            var rawTickets = await query
+                .OrderByDescending(t => t.CreatedAt)
+                .ToListAsync();
+
+            var kyivTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Kyiv");
+
+            return rawTickets.Select(t => {
+                var localTime = TimeZoneInfo.ConvertTimeFromUtc(t.CreatedAt, kyivTimeZone);
+                return new TicketResponseDto
+                {
+                    Id = t.Id,
+                    RoomNumber = t.RoomNumber,
+                    AuthorName = t.AuthorName,
+                    Description = t.Description,
+                    StatusText = t.Status switch 
+                    {
+                        TicketStatus.New => "Нова",
+                        TicketStatus.InProgress => "В роботі",
+                        TicketStatus.Resolved => "Виконано",
+                        TicketStatus.Closed => "Закрито",
+                        _ => "Невідомо"
+                    },
+                    CreatedAt = localTime.ToString("dd.MM.yyyy HH:mm") 
+                };
+            });
+        }
     }
 }
