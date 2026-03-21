@@ -2,7 +2,8 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher, Router, F
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.filters import Command, CommandObject
 from fastapi import FastAPI
 from pydantic import BaseModel
 import httpx
@@ -22,6 +23,20 @@ app = FastAPI()
 
 # Хранилище голосов: {ticket_id: {"rejected": set(user_ids), "message_ids": {user_id: (chat_id, message_id)}}}
 votes: dict[str, dict] = {}
+
+STATUS_NAMES = {
+    0: "Нова",
+    1: "В роботі",
+    2: "Виконано",
+    3: "Закрито",
+}
+
+STATUS_ICONS = {
+    0: "🆕",
+    1: "🔧",
+    2: "✅",
+    3: "🔒",
+}
 
 
 class NotifyPayload(BaseModel):
@@ -49,6 +64,78 @@ def build_ticket_message(payload: NotifyPayload) -> str:
     )
 
 
+def build_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🆕 Нові", callback_data="list:0"),
+         InlineKeyboardButton(text="🔧 В роботі", callback_data="list:1")],
+        [InlineKeyboardButton(text="✅ Виконано", callback_data="list:2"),
+         InlineKeyboardButton(text="🔒 Закрито", callback_data="list:3")],
+        [InlineKeyboardButton(text="📂 Мої заявки", callback_data="my_tickets")],
+    ])
+
+
+async def fetch_tickets(status: int | None = None, assignee_id: str | None = None) -> list[dict] | None:
+    """Запрашивает список заявок из API."""
+    try:
+        params = {}
+        if status is not None:
+            params["status"] = status
+        if assignee_id is not None:
+            params["assigneeId"] = assignee_id
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"{API_BASE_URL}/api/tickets", params=params)
+            if resp.status_code == 200:
+                return resp.json()
+            return None
+    except Exception as e:
+        logger.error(f"Ошибка при получении заявок: {e}")
+        return None
+
+
+async def fetch_ticket(ticket_id: int) -> dict | None:
+    """Запрашивает одну заявку по ID из API."""
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"{API_BASE_URL}/api/tickets/{ticket_id}")
+            if resp.status_code == 200:
+                return resp.json()
+            return None
+    except Exception as e:
+        logger.error(f"Ошибка при получении заявки {ticket_id}: {e}")
+        return None
+
+
+def format_ticket_detail(t: dict) -> str:
+    """Форматирует полную информацию о заявке."""
+    status_text = t.get("statusText", "Невідомо")
+    assignee = t.get("assigneeId") or "Не призначено"
+    return (
+        f"📋 <b>Заявка #{t['id']}</b>\n\n"
+        f"🏠 <b>Аудиторія:</b> {t['roomNumber']}\n"
+        f"👤 <b>Заявник:</b> {t['authorName']}\n"
+        f"📝 <b>Опис:</b> {t['description']}\n"
+        f"📊 <b>Статус:</b> {status_text}\n"
+        f"🧑‍🔧 <b>Виконавець:</b> {assignee}\n"
+        f"📅 <b>Створено:</b> {t['createdAt']}"
+    )
+
+
+def format_ticket_list(tickets: list[dict], title: str) -> str:
+    """Форматирует список заявок."""
+    if not tickets:
+        return f"{title}\n\nЗаявок не знайдено."
+    lines = [title, ""]
+    for t in tickets:
+        status_text = t.get("statusText", "?")
+        lines.append(
+            f"• <b>#{t['id']}</b> | 🏠 {t['roomNumber']} | {status_text}\n"
+            f"  {t['description'][:80]}"
+        )
+    lines.append(f"\nВсього: {len(tickets)}")
+    lines.append("\nВикористайте /ticket <номер> для деталей.")
+    return "\n".join(lines)
+
+
 @app.post("/notify")
 async def notify(payload: NotifyPayload):
     """Получает уведомление от API о новой заявке и рассылает всем разрешённым пользователям."""
@@ -73,13 +160,16 @@ async def notify(payload: NotifyPayload):
     return {"status": "ok"}
 
 
-async def update_ticket_status(ticket_id: str, status: int) -> bool:
+async def update_ticket_status(ticket_id: str, status: int, assignee_id: str | None = None) -> bool:
     """Отправляет PATCH-запрос на бэкенд для обновления статуса заявки."""
     try:
+        payload = {"status": status}
+        if assignee_id is not None:
+            payload["assigneeId"] = assignee_id
         async with httpx.AsyncClient() as client:
             resp = await client.patch(
                 f"{API_BASE_URL}/api/tickets/{ticket_id}/status",
-                json={"status": status},
+                json=payload,
             )
             return resp.status_code == 200
     except Exception as e:
@@ -119,7 +209,7 @@ async def on_accept(callback: CallbackQuery):
         await callback.answer("Заявка вже оброблена.", show_alert=True)
         return
 
-    success = await update_ticket_status(ticket_id, 1)  # InProgress
+    success = await update_ticket_status(ticket_id, 1, assignee_id=str(user_id))  # InProgress
     if success:
         result_text = f"✅ Заявку <b>#{ticket_id}</b> прийнято користувачем <b>{callback.from_user.full_name}</b>"
         await remove_keyboards_for_ticket(ticket_id, result_text)
@@ -169,6 +259,93 @@ async def on_reject(callback: CallbackQuery):
         await callback.answer("Заявку відхилено усіма.", show_alert=True)
     else:
         await callback.answer("Ви відхилили заявку. Очікуємо рішення інших.", show_alert=True)
+
+
+@router.message(Command("start"))
+async def cmd_start(message: Message):
+    if message.from_user.id not in ALLOWED_TELEGRAM_IDS:
+        await message.answer("У вас немає доступу.")
+        return
+    await message.answer(
+        "👋 <b>ADHD HelpDesk Бот</b>\n\n"
+        "📋 <b>Оберіть категорію заявок:</b>\n\n"
+        "Або використайте /ticket <номер> для деталей.",
+        reply_markup=build_menu_keyboard(),
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("ticket"))
+async def cmd_ticket(message: Message, command: CommandObject):
+    if message.from_user.id not in ALLOWED_TELEGRAM_IDS:
+        await message.answer("У вас немає доступу.")
+        return
+
+    if not command.args or not command.args.strip().isdigit():
+        await message.answer("Вкажіть номер заявки: /ticket <номер>")
+        return
+
+    ticket_id = int(command.args.strip())
+    ticket = await fetch_ticket(ticket_id)
+
+    if ticket is None:
+        await message.answer(f"Заявку #{ticket_id} не знайдено.")
+        return
+
+    await message.answer(format_ticket_detail(ticket), parse_mode="HTML")
+
+
+@router.message(Command("tickets"))
+async def cmd_tickets(message: Message):
+    if message.from_user.id not in ALLOWED_TELEGRAM_IDS:
+        await message.answer("У вас немає доступу.")
+        return
+
+    await message.answer(
+        "📋 <b>Оберіть категорію заявок:</b>",
+        reply_markup=build_menu_keyboard(),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("list:"))
+async def on_list_by_status(callback: CallbackQuery):
+    if callback.from_user.id not in ALLOWED_TELEGRAM_IDS:
+        await callback.answer("У вас немає доступу.", show_alert=True)
+        return
+
+    status = int(callback.data.split(":", 1)[1])
+    tickets = await fetch_tickets(status=status)
+
+    if tickets is None:
+        await callback.answer("Помилка при отриманні заявок.", show_alert=True)
+        return
+
+    icon = STATUS_ICONS.get(status, "📋")
+    name = STATUS_NAMES.get(status, "Невідомо")
+    title = f"{icon} <b>Заявки зі статусом: {name}</b>"
+
+    await callback.message.answer(format_ticket_list(tickets, title), parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "my_tickets")
+async def on_my_tickets(callback: CallbackQuery):
+    if callback.from_user.id not in ALLOWED_TELEGRAM_IDS:
+        await callback.answer("У вас немає доступу.", show_alert=True)
+        return
+
+    user_id = str(callback.from_user.id)
+    tickets = await fetch_tickets(assignee_id=user_id)
+
+    if tickets is None:
+        await callback.answer("Помилка при отриманні заявок.", show_alert=True)
+        return
+
+    title = f"📂 <b>Мої заявки ({callback.from_user.full_name})</b>"
+
+    await callback.message.answer(format_ticket_list(tickets, title), parse_mode="HTML")
+    await callback.answer()
 
 
 async def start_polling():
