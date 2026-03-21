@@ -44,5 +44,18 @@ services:
     depends_on:
       - api
 
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - BOT_TOKEN=8575057345:AAHElhAGuQ7q9k4_SkeHloRMRG6_3dzbuAY
+      - API_BASE_URL=http://api:5001
+      - ALLOWED_TELEGRAM_IDS=568312173,852755803
+    depends_on:
+      - api
+
 volumes:
   postgresql_data:
