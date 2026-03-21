@@ -17,9 +17,11 @@ namespace DragoDeskHelp.API.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<TicketResponseDto>>> GetTickets([FromQuery] TicketStatus? status)
+        public async Task<ActionResult<IEnumerable<TicketResponseDto>>> GetTickets(
+            [FromQuery] TicketStatus? status, 
+            [FromQuery] string? assigneeId)
         {
-            var response = await _ticketService.GetTicketsAsync(status);
+            var response = await _ticketService.GetTicketsAsync(status, assigneeId);
             return Ok(response);
         }
 
@@ -32,10 +34,9 @@ namespace DragoDeskHelp.API.Controllers
         }
 
         [HttpPatch("{id}/status")]
-        public async Task<IActionResult> UpdateTicketStatus(int id, 
-            [FromBody] TicketStatusUpdateDto dto)
+        public async Task<IActionResult> UpdateTicketStatus(int id, [FromBody] TicketStatusUpdateDto dto)
         {
-            var isUpdated = await _ticketService.UpdateTicketStatusAsync(id, dto.Status);
+            var isUpdated = await _ticketService.UpdateTicketStatusAsync(id, dto.Status, dto.AssigneeId);
 
             if (!isUpdated)
             {
