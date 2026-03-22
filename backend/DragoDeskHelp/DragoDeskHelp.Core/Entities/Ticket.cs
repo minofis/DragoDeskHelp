@@ -19,5 +19,7 @@ namespace DragoDeskHelp.Core.Entities
         public TicketStatus Status { get; set; } = TicketStatus.New;
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public string? AssigneeTelegramId { get; set; }
     }
 }

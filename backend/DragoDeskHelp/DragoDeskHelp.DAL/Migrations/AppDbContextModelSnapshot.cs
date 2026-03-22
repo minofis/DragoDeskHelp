@@ -30,6 +30,9 @@ namespace DragoDeskHelp.DAL.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AssigneeTelegramId")
+                        .HasColumnType("text");
+
                     b.Property<string>("AuthorName")
                         .IsRequired()
                         .HasColumnType("text");

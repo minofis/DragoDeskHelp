@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace DragoDeskHelp.DAL.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260320114706_InitNewIntId")]
-    partial class InitNewIntId
+    [Migration("20260321115501_InitialWithAssignee")]
+    partial class InitialWithAssignee
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -32,6 +32,9 @@ namespace DragoDeskHelp.DAL.Migrations
                         .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AssigneeTelegramId")
+                        .HasColumnType("text");
 
                     b.Property<string>("AuthorName")
                         .IsRequired()

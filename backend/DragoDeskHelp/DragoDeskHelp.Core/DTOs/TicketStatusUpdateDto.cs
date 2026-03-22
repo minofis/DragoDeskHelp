@@ -7,5 +7,7 @@ namespace DragoDeskHelp.Core.DTOs
     {
         [Required]
         public TicketStatus Status { get; set; }
+        
+        public string? AssigneeId { get; set; }
     }
 }

@@ -7,7 +7,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace DragoDeskHelp.DAL.Migrations
 {
     /// <inheritdoc />
-    public partial class InitNewIntId : Migration
+    public partial class InitialWithAssignee : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -22,7 +22,8 @@ namespace DragoDeskHelp.DAL.Migrations
                     AuthorName = table.Column<string>(type: "text", nullable: false),
                     Description = table.Column<string>(type: "text", nullable: false),
                     Status = table.Column<int>(type: "integer", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    AssigneeTelegramId = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
                 {

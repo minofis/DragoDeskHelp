@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using DragoDeskHelp.Core.DTOs;
 using DragoDeskHelp.Core.Interfaces;
+using DragoDeskHelp.Core.Enums;
 
 namespace DragoDeskHelp.API.Controllers
 {
@@ -16,9 +17,11 @@ namespace DragoDeskHelp.API.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<TicketResponseDto>>> GetTickets()
+        public async Task<ActionResult<IEnumerable<TicketResponseDto>>> GetTickets(
+            [FromQuery] TicketStatus? status, 
+            [FromQuery] string? assigneeId)
         {
-            var response = await _ticketService.GetTicketsAsync();
+            var response = await _ticketService.GetTicketsAsync(status, assigneeId);
             return Ok(response);
         }
 
@@ -31,10 +34,9 @@ namespace DragoDeskHelp.API.Controllers
         }
 
         [HttpPatch("{id}/status")]
-        public async Task<IActionResult> UpdateTicketStatus(int id, 
-            [FromBody] TicketStatusUpdateDto dto)
+        public async Task<IActionResult> UpdateTicketStatus(int id, [FromBody] TicketStatusUpdateDto dto)
         {
-            var isUpdated = await _ticketService.UpdateTicketStatusAsync(id, dto.Status);
+            var isUpdated = await _ticketService.UpdateTicketStatusAsync(id, dto.Status, dto.AssigneeId);
 
             if (!isUpdated)
             {
@@ -42,6 +44,17 @@ namespace DragoDeskHelp.API.Controllers
             }
 
             return Ok(new { Message = "Статус успішно оновлено!" });
+        }
+
+        [HttpGet("{id}")]
+        public async Task<ActionResult<TicketResponseDto>> GetTicket(int id)
+        {
+            var ticket = await _ticketService.GetTicketByIdAsync(id);
+            
+            if (ticket == null)
+                return NotFound(new { Message = $"Заявка з ID {id} не знайдена." });
+
+            return Ok(ticket);
         }
     }
 }
