@@ -48,7 +48,7 @@ namespace DragoDeskHelp.BLL.Services
                         TicketStatus.New => "Нова",
                         TicketStatus.InProgress => "В роботі",
                         TicketStatus.Resolved => "Виконано",
-                        TicketStatus.Closed => "Закрито",
+                        TicketStatus.Rejected => "Відхилено",
                         _ => "Невідомо"
                     },
                     CreatedAt = localTime.ToString("dd.MM.yyyy HH:mm"),
@@ -125,10 +125,11 @@ namespace DragoDeskHelp.BLL.Services
                     TicketStatus.New => "Нова",
                     TicketStatus.InProgress => "В роботі",
                     TicketStatus.Resolved => "Виконано",
-                    TicketStatus.Closed => "Закрито",
+                    TicketStatus.Rejected => "Відхилено",
                     _ => "Невідомо"
                 },
-                CreatedAt = localTime.ToString("dd.MM.yyyy HH:mm") 
+                CreatedAt = localTime.ToString("dd.MM.yyyy HH:mm"),
+                AssigneeId = ticket.AssigneeTelegramId
             };
         }
     }

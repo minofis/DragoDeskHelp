@@ -55,14 +55,14 @@ STATUS_NAMES = {
     0: "Нова",
     1: "В роботі",
     2: "Виконано",
-    3: "Закрито",
+    3: "Відхилено",
 }
 
 STATUS_ICONS = {
     0: "🆕",
     1: "🔧",
     2: "✅",
-    3: "🔒",
+    3: "❌",
 }
 
 
@@ -96,7 +96,7 @@ def build_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🆕 Нові", callback_data="list:0"),
          InlineKeyboardButton(text="🔧 В роботі", callback_data="list:1")],
         [InlineKeyboardButton(text="✅ Виконано", callback_data="list:2"),
-         InlineKeyboardButton(text="🔒 Закрито", callback_data="list:3")],
+         InlineKeyboardButton(text="❌ Відхилено", callback_data="list:3")],
         [InlineKeyboardButton(text="📂 Мої заявки", callback_data="my_tickets")],
     ])
 
@@ -148,21 +148,14 @@ def format_ticket_detail(t: dict) -> str:
 
 
 def build_ticket_detail_keyboard(ticket: dict, user_id: int) -> InlineKeyboardMarkup | None:
-    """Строит inline-кнопки для детальной заявки (закрытие/выполнение)."""
-    assignee_id = ticket.get("assigneeId")
-    status = ticket.get("status")
+    assignee_id = str(ticket.get("assigneeId")) 
+    status_text = ticket.get("statusText", "")
     buttons = []
 
-    # Исполнитель может отметить как выполнено (status 1 -> 2)
-    if assignee_id == str(user_id) and status == 1:
+    if assignee_id == str(user_id) and status_text == "В роботі":
         buttons.append([
             InlineKeyboardButton(text="✅ Виконано", callback_data=f"done:{ticket['id']}"),
-            InlineKeyboardButton(text="🔒 Закрити", callback_data=f"close:{ticket['id']}"),
-        ])
-    # Исполнитель может закрыть выполненную заявку (status 2 -> 3)
-    elif assignee_id == str(user_id) and status == 2:
-        buttons.append([
-            InlineKeyboardButton(text="🔒 Закрити", callback_data=f"close:{ticket['id']}"),
+            InlineKeyboardButton(text="❌ Відхилити", callback_data=f"close:{ticket['id']}"),
         ])
 
     buttons.append([InlineKeyboardButton(text="« Назад до меню", callback_data="menu")])
@@ -310,10 +303,9 @@ async def on_reject(callback: CallbackQuery):
 
     # Проверяем: все ли отклонили
     if votes[ticket_id]["rejected"] == set(votes[ticket_id]["message_ids"].keys()):
-        success = await update_ticket_status(ticket_id, 3)  # Closed
+        success = await update_ticket_status(ticket_id, 3)  # Відхилено
         if success:
             result_text = f"❌ Заявку <b>#{ticket_id}</b> відхилено усіма користувачами."
-            # Отправляем уведомление всем (кнопки уже убраны у каждого при reject)
             for uid in votes[ticket_id]["message_ids"]:
                 try:
                     await bot.send_message(chat_id=uid, text=result_text, parse_mode="HTML")
@@ -421,17 +413,42 @@ async def on_my_tickets(callback: CallbackQuery):
         await callback.answer("У вас немає доступу.", show_alert=True)
         return
 
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔧 В роботі", callback_data="my_list:1")],
+        [InlineKeyboardButton(text="✅ Виконано", callback_data="my_list:2"),
+         InlineKeyboardButton(text="❌ Відхилено", callback_data="my_list:3")],
+        [InlineKeyboardButton(text="« Назад до головного меню", callback_data="menu")],
+    ])
+
+    await callback.message.edit_text(
+        f"📂 <b>Мої заявки ({callback.from_user.full_name})</b>\n\nОберіть категорію:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("my_list:"))
+async def on_my_list_by_status(callback: CallbackQuery):
+    if callback.from_user.id not in ALLOWED_TELEGRAM_IDS:
+        await callback.answer("У вас немає доступу.", show_alert=True)
+        return
+
+    status = int(callback.data.split(":", 1)[1])
     user_id = str(callback.from_user.id)
-    tickets = await fetch_tickets(assignee_id=user_id)
+
+    tickets = await fetch_tickets(status=status, assignee_id=user_id)
 
     if tickets is None:
         await callback.answer("Помилка при отриманні заявок.", show_alert=True)
         return
 
-    title = f"📂 <b>Мої заявки ({callback.from_user.full_name})</b>"
+    icon = STATUS_ICONS.get(status, "📂")
+    name = STATUS_NAMES.get(status, "Невідомо")
+    title = f"{icon} <b>Мої заявки: {name}</b>"
 
     text, keyboard = format_ticket_list(tickets, title)
-    await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
@@ -482,7 +499,6 @@ async def on_done(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("close:"))
 async def on_close(callback: CallbackQuery):
-    """Исполнитель закрывает свою заявку (-> status 3)."""
     user_id = callback.from_user.id
     if user_id not in ALLOWED_TELEGRAM_IDS:
         await callback.answer("У вас немає доступу.", show_alert=True)
@@ -494,10 +510,10 @@ async def on_close(callback: CallbackQuery):
         username = USER_NAMES.get(user_id, str(user_id))
         await callback.message.edit_reply_markup(reply_markup=None)
         await callback.message.answer(
-            f"🔒 Заявку <b>#{ticket_id}</b> закрито ({username})",
+            f"❌ Заявку <b>#{ticket_id}</b> відхилено ({username})",
             parse_mode="HTML",
         )
-        await callback.answer("Заявку закрито!", show_alert=True)
+        await callback.answer("Заявку відхилено!", show_alert=True)
     else:
         await callback.answer("Помилка при оновленні статусу.", show_alert=True)
 
