@@ -2,7 +2,10 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher, Router, F
-from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup,
+    ReplyKeyboardMarkup, KeyboardButton,
+)
 from aiogram.filters import Command, CommandObject
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -23,6 +26,30 @@ app = FastAPI()
 
 # Хранилище голосов: {ticket_id: {"rejected": set(user_ids), "message_ids": {user_id: (chat_id, message_id)}}}
 votes: dict[str, dict] = {}
+
+# Маппинг Telegram ID -> юзернейм
+USER_NAMES: dict[int, str] = {
+    568312173: "@minofisss",
+    852755803: "@Beneckto",
+}
+
+
+def get_user_display_name(user_id_str: str | None) -> str:
+    """Возвращает читаемое имя пользователя по его ID."""
+    if not user_id_str:
+        return "Не призначено"
+    try:
+        uid = int(user_id_str)
+        return USER_NAMES.get(uid, f"ID {user_id_str}")
+    except ValueError:
+        return user_id_str
+
+
+# Persistent keyboard (кнопка под полем ввода)
+main_keyboard = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="📋 Меню")]],
+    resize_keyboard=True,
+)
 
 STATUS_NAMES = {
     0: "Нова",
@@ -108,7 +135,7 @@ async def fetch_ticket(ticket_id: int) -> dict | None:
 def format_ticket_detail(t: dict) -> str:
     """Форматирует полную информацию о заявке."""
     status_text = t.get("statusText", "Невідомо")
-    assignee = t.get("assigneeId") or "Не призначено"
+    assignee = get_user_display_name(t.get("assigneeId"))
     return (
         f"📋 <b>Заявка #{t['id']}</b>\n\n"
         f"🏠 <b>Аудиторія:</b> {t['roomNumber']}\n"
@@ -120,10 +147,37 @@ def format_ticket_detail(t: dict) -> str:
     )
 
 
-def format_ticket_list(tickets: list[dict], title: str) -> str:
-    """Форматирует список заявок."""
+def build_ticket_detail_keyboard(ticket: dict, user_id: int) -> InlineKeyboardMarkup | None:
+    """Строит inline-кнопки для детальной заявки (закрытие/выполнение)."""
+    assignee_id = ticket.get("assigneeId")
+    status = ticket.get("status")
+    buttons = []
+
+    # Исполнитель может отметить как выполнено (status 1 -> 2)
+    if assignee_id == str(user_id) and status == 1:
+        buttons.append([
+            InlineKeyboardButton(text="✅ Виконано", callback_data=f"done:{ticket['id']}"),
+            InlineKeyboardButton(text="🔒 Закрити", callback_data=f"close:{ticket['id']}"),
+        ])
+    # Исполнитель может закрыть выполненную заявку (status 2 -> 3)
+    elif assignee_id == str(user_id) and status == 2:
+        buttons.append([
+            InlineKeyboardButton(text="🔒 Закрити", callback_data=f"close:{ticket['id']}"),
+        ])
+
+    buttons.append([InlineKeyboardButton(text="« Назад до меню", callback_data="menu")])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def format_ticket_list(tickets: list[dict], title: str) -> tuple[str, InlineKeyboardMarkup]:
+    """Форматирует список заявок и возвращает текст + inline-кнопки для каждой заявки."""
     if not tickets:
-        return f"{title}\n\nЗаявок не знайдено."
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="« Назад до меню", callback_data="menu")],
+        ])
+        return f"{title}\n\nЗаявок не знайдено.", keyboard
+
     lines = [title, ""]
     for t in tickets:
         status_text = t.get("statusText", "?")
@@ -132,8 +186,18 @@ def format_ticket_list(tickets: list[dict], title: str) -> str:
             f"  {t['description'][:80]}"
         )
     lines.append(f"\nВсього: {len(tickets)}")
-    lines.append("\nВикористайте /ticket <номер> для деталей.")
-    return "\n".join(lines)
+
+    # Кнопки для быстрого открытия каждой заявки
+    buttons = []
+    for t in tickets:
+        buttons.append([InlineKeyboardButton(
+            text=f"#{t['id']} — {t['roomNumber']}",
+            callback_data=f"ticket:{t['id']}",
+        )])
+    buttons.append([InlineKeyboardButton(text="« Назад до меню", callback_data="menu")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    return "\n".join(lines), keyboard
 
 
 @app.post("/notify")
@@ -266,10 +330,29 @@ async def cmd_start(message: Message):
     if message.from_user.id not in ALLOWED_TELEGRAM_IDS:
         await message.answer("У вас немає доступу.")
         return
+    # Отправляем persistent keyboard (кнопка внизу)
     await message.answer(
         "👋 <b>ADHD HelpDesk Бот</b>\n\n"
-        "📋 <b>Оберіть категорію заявок:</b>\n\n"
-        "Або використайте /ticket <номер> для деталей.",
+        "Натисніть кнопку <b>📋 Меню</b> нижче для роботи із заявками.",
+        reply_markup=main_keyboard,
+        parse_mode="HTML",
+    )
+    # Отправляем inline-меню
+    await message.answer(
+        "📋 <b>Оберіть категорію заявок:</b>",
+        reply_markup=build_menu_keyboard(),
+        parse_mode="HTML",
+    )
+
+
+@router.message(F.text == "📋 Меню")
+async def on_menu_button(message: Message):
+    """Обработчик persistent кнопки «Меню»."""
+    if message.from_user.id not in ALLOWED_TELEGRAM_IDS:
+        await message.answer("У вас немає доступу.")
+        return
+    await message.answer(
+        "📋 <b>Оберіть категорію заявок:</b>",
         reply_markup=build_menu_keyboard(),
         parse_mode="HTML",
     )
@@ -292,20 +375,22 @@ async def cmd_ticket(message: Message, command: CommandObject):
         await message.answer(f"Заявку #{ticket_id} не знайдено.")
         return
 
-    await message.answer(format_ticket_detail(ticket), parse_mode="HTML")
+    keyboard = build_ticket_detail_keyboard(ticket, message.from_user.id)
+    await message.answer(format_ticket_detail(ticket), reply_markup=keyboard, parse_mode="HTML")
 
 
-@router.message(Command("tickets"))
-async def cmd_tickets(message: Message):
-    if message.from_user.id not in ALLOWED_TELEGRAM_IDS:
-        await message.answer("У вас немає доступу.")
+@router.callback_query(F.data == "menu")
+async def on_menu(callback: CallbackQuery):
+    """Возврат в главное меню."""
+    if callback.from_user.id not in ALLOWED_TELEGRAM_IDS:
+        await callback.answer("У вас немає доступу.", show_alert=True)
         return
-
-    await message.answer(
+    await callback.message.answer(
         "📋 <b>Оберіть категорію заявок:</b>",
         reply_markup=build_menu_keyboard(),
         parse_mode="HTML",
     )
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("list:"))
@@ -325,7 +410,8 @@ async def on_list_by_status(callback: CallbackQuery):
     name = STATUS_NAMES.get(status, "Невідомо")
     title = f"{icon} <b>Заявки зі статусом: {name}</b>"
 
-    await callback.message.answer(format_ticket_list(tickets, title), parse_mode="HTML")
+    text, keyboard = format_ticket_list(tickets, title)
+    await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 
@@ -344,8 +430,76 @@ async def on_my_tickets(callback: CallbackQuery):
 
     title = f"📂 <b>Мої заявки ({callback.from_user.full_name})</b>"
 
-    await callback.message.answer(format_ticket_list(tickets, title), parse_mode="HTML")
+    text, keyboard = format_ticket_list(tickets, title)
+    await callback.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("ticket:"))
+async def on_ticket_detail(callback: CallbackQuery):
+    """Показывает детали заявки по нажатию inline-кнопки из списка."""
+    if callback.from_user.id not in ALLOWED_TELEGRAM_IDS:
+        await callback.answer("У вас немає доступу.", show_alert=True)
+        return
+
+    ticket_id = int(callback.data.split(":", 1)[1])
+    ticket = await fetch_ticket(ticket_id)
+
+    if ticket is None:
+        await callback.answer("Заявку не знайдено.", show_alert=True)
+        return
+
+    keyboard = build_ticket_detail_keyboard(ticket, callback.from_user.id)
+    await callback.message.answer(
+        format_ticket_detail(ticket),
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("done:"))
+async def on_done(callback: CallbackQuery):
+    """Исполнитель отмечает заявку как выполненную (status 1 -> 2)."""
+    user_id = callback.from_user.id
+    if user_id not in ALLOWED_TELEGRAM_IDS:
+        await callback.answer("У вас немає доступу.", show_alert=True)
+        return
+
+    ticket_id = callback.data.split(":", 1)[1]
+    success = await update_ticket_status(ticket_id, 2)
+    if success:
+        username = USER_NAMES.get(user_id, str(user_id))
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.answer(
+            f"✅ Заявку <b>#{ticket_id}</b> виконано ({username})",
+            parse_mode="HTML",
+        )
+        await callback.answer("Заявку позначено як виконану!", show_alert=True)
+    else:
+        await callback.answer("Помилка при оновленні статусу.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("close:"))
+async def on_close(callback: CallbackQuery):
+    """Исполнитель закрывает свою заявку (-> status 3)."""
+    user_id = callback.from_user.id
+    if user_id not in ALLOWED_TELEGRAM_IDS:
+        await callback.answer("У вас немає доступу.", show_alert=True)
+        return
+
+    ticket_id = callback.data.split(":", 1)[1]
+    success = await update_ticket_status(ticket_id, 3)
+    if success:
+        username = USER_NAMES.get(user_id, str(user_id))
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.answer(
+            f"🔒 Заявку <b>#{ticket_id}</b> закрито ({username})",
+            parse_mode="HTML",
+        )
+        await callback.answer("Заявку закрито!", show_alert=True)
+    else:
+        await callback.answer("Помилка при оновленні статусу.", show_alert=True)
 
 
 async def start_polling():
